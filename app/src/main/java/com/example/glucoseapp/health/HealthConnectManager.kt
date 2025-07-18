@@ -134,17 +134,51 @@ class HealthConnectManager(private val context: Context) {
     }
     
     suspend fun getStepsDataForLast7Days(): List<StepsData> {
-        val now = Instant.now()
-        val sevenDaysAgo = now.minus(7, ChronoUnit.DAYS)
-        
+        val endTime = Instant.now()
+        val startTime = endTime.minus(7, ChronoUnit.DAYS)
+        return getAllStepsData(startTime, endTime)
+    }
+    
+    suspend fun getHeartRateDataForLast7Days(): List<HeartRateData> {
+        val endTime = Instant.now()
+        val startTime = endTime.minus(7, ChronoUnit.DAYS)
+        return getAllHeartRateData(startTime, endTime)
+    }
+    
+    suspend fun getGlucoseDataForLast7Days(): List<GlucoseData> {
+        val endTime = Instant.now()
+        val startTime = endTime.minus(7, ChronoUnit.DAYS)
+        return getAllGlucoseData(startTime, endTime)
+    }
+    
+    // Comprehensive Historic Data Retrieval Methods with Pagination
+    
+    /**
+     * Retrieves ALL available steps data from Health Connect using pagination
+     * @param startTime Optional start time (defaults to very old date to get all data)
+     * @param endTime Optional end time (defaults to now)
+     * @return List of all StepsData records
+     */
+    suspend fun getAllStepsData(
+        startTime: Instant = Instant.ofEpochSecond(0), // Very old date to get all data
+        endTime: Instant = Instant.now()
+    ): List<StepsData> {
         return try {
-            val request = ReadRecordsRequest(
-                recordType = StepsRecord::class,
-                timeRangeFilter = TimeRangeFilter.between(sevenDaysAgo, now)
-            )
-            val response = healthConnectClient.readRecords(request)
+            val allRecords = mutableListOf<StepsRecord>()
+            var pageToken: String? = null
             
-            response.records.map { record ->
+            do {
+                val request = ReadRecordsRequest(
+                    recordType = StepsRecord::class,
+                    timeRangeFilter = TimeRangeFilter.between(startTime, endTime),
+                    pageToken = pageToken
+                )
+                val response = healthConnectClient.readRecords(request)
+                allRecords.addAll(response.records)
+                pageToken = response.pageToken
+            } while (pageToken != null)
+            
+            allRecords.map { record ->
                 StepsData(
                     count = record.count,
                     timestamp = record.endTime,
@@ -157,31 +191,36 @@ class HealthConnectManager(private val context: Context) {
         }
     }
     
-    suspend fun getHeartRateDataForLast7Days(): List<HeartRateData> {
-        val now = Instant.now()
-        val sevenDaysAgo = now.minus(7, ChronoUnit.DAYS)
-        
+    /**
+     * Retrieves ALL available heart rate data from Health Connect using pagination
+     * @param startTime Optional start time (defaults to very old date to get all data)
+     * @param endTime Optional end time (defaults to now)
+     * @return List of all HeartRateData records
+     */
+    suspend fun getAllHeartRateData(
+        startTime: Instant = Instant.ofEpochSecond(0), // Very old date to get all data
+        endTime: Instant = Instant.now()
+    ): List<HeartRateData> {
         return try {
-            val request = ReadRecordsRequest(
-                recordType = HeartRateRecord::class,
-                timeRangeFilter = TimeRangeFilter.between(sevenDaysAgo, now)
-            )
-            val response = healthConnectClient.readRecords(request)
+            val allRecords = mutableListOf<HeartRateRecord>()
+            var pageToken: String? = null
             
-            response.records.flatMap { record ->
-                if (record.samples.isNotEmpty()) {
-                    record.samples.map { sample ->
-                        HeartRateData(
-                            beatsPerMinute = sample.beatsPerMinute,
-                            timestamp = record.startTime
-                        )
-                    }
-                } else {
-                    listOf(
-                        HeartRateData(
-                            beatsPerMinute = 60L, // Default value
-                            timestamp = record.startTime
-                        )
+            do {
+                val request = ReadRecordsRequest(
+                    recordType = HeartRateRecord::class,
+                    timeRangeFilter = TimeRangeFilter.between(startTime, endTime),
+                    pageToken = pageToken
+                )
+                val response = healthConnectClient.readRecords(request)
+                allRecords.addAll(response.records)
+                pageToken = response.pageToken
+            } while (pageToken != null)
+            
+            allRecords.flatMap { record ->
+                record.samples.map { sample ->
+                    HeartRateData(
+                        beatsPerMinute = sample.beatsPerMinute,
+                        timestamp = sample.time
                     )
                 }
             }.sortedByDescending { it.timestamp }
@@ -190,18 +229,32 @@ class HealthConnectManager(private val context: Context) {
         }
     }
     
-    suspend fun getGlucoseDataForLast7Days(): List<GlucoseData> {
-        val now = Instant.now()
-        val sevenDaysAgo = now.minus(7, ChronoUnit.DAYS)
-        
+    /**
+     * Retrieves ALL available glucose data from Health Connect using pagination
+     * @param startTime Optional start time (defaults to very old date to get all data)
+     * @param endTime Optional end time (defaults to now)
+     * @return List of all GlucoseData records
+     */
+    suspend fun getAllGlucoseData(
+        startTime: Instant = Instant.ofEpochSecond(0), // Very old date to get all data
+        endTime: Instant = Instant.now()
+    ): List<GlucoseData> {
         return try {
-            val request = ReadRecordsRequest(
-                recordType = BloodGlucoseRecord::class,
-                timeRangeFilter = TimeRangeFilter.between(sevenDaysAgo, now)
-            )
-            val response = healthConnectClient.readRecords(request)
+            val allRecords = mutableListOf<BloodGlucoseRecord>()
+            var pageToken: String? = null
             
-            response.records.map { record ->
+            do {
+                val request = ReadRecordsRequest(
+                    recordType = BloodGlucoseRecord::class,
+                    timeRangeFilter = TimeRangeFilter.between(startTime, endTime),
+                    pageToken = pageToken
+                )
+                val response = healthConnectClient.readRecords(request)
+                allRecords.addAll(response.records)
+                pageToken = response.pageToken
+            } while (pageToken != null)
+            
+            allRecords.map { record ->
                 GlucoseData(
                     level = record.level.inMilligramsPerDeciliter,
                     unit = "mg/dL",
@@ -212,6 +265,107 @@ class HealthConnectManager(private val context: Context) {
         } catch (e: Exception) {
             emptyList()
         }
+    }
+    
+    /**
+     * Retrieves ALL available data from a specific app package using pagination
+     * This is useful for reading your own app's historical data without the 30-day limit
+     */
+    suspend fun getAllDataFromPackage(
+        packageName: String,
+        startTime: Instant = Instant.ofEpochSecond(0),
+        endTime: Instant = Instant.now()
+    ): Triple<List<StepsData>, List<HeartRateData>, List<GlucoseData>> {
+        val dataOriginFilter = setOf(androidx.health.connect.client.records.metadata.DataOrigin(packageName))
+        
+        // Get Steps Data
+        val stepsData = try {
+            val allRecords = mutableListOf<StepsRecord>()
+            var pageToken: String? = null
+            
+            do {
+                val request = ReadRecordsRequest(
+                    recordType = StepsRecord::class,
+                    timeRangeFilter = TimeRangeFilter.between(startTime, endTime),
+                    dataOriginFilter = dataOriginFilter,
+                    pageToken = pageToken
+                )
+                val response = healthConnectClient.readRecords(request)
+                allRecords.addAll(response.records)
+                pageToken = response.pageToken
+            } while (pageToken != null)
+            
+            allRecords.map { record ->
+                StepsData(
+                    count = record.count,
+                    timestamp = record.endTime,
+                    startTime = record.startTime,
+                    endTime = record.endTime
+                )
+            }.sortedByDescending { it.timestamp }
+        } catch (e: Exception) {
+            emptyList()
+        }
+        
+        // Get Heart Rate Data
+        val heartRateData = try {
+            val allRecords = mutableListOf<HeartRateRecord>()
+            var pageToken: String? = null
+            
+            do {
+                val request = ReadRecordsRequest(
+                    recordType = HeartRateRecord::class,
+                    timeRangeFilter = TimeRangeFilter.between(startTime, endTime),
+                    dataOriginFilter = dataOriginFilter,
+                    pageToken = pageToken
+                )
+                val response = healthConnectClient.readRecords(request)
+                allRecords.addAll(response.records)
+                pageToken = response.pageToken
+            } while (pageToken != null)
+            
+            allRecords.flatMap { record ->
+                record.samples.map { sample ->
+                    HeartRateData(
+                        beatsPerMinute = sample.beatsPerMinute,
+                        timestamp = sample.time
+                    )
+                }
+            }.sortedByDescending { it.timestamp }
+        } catch (e: Exception) {
+            emptyList()
+        }
+        
+        // Get Glucose Data
+        val glucoseData = try {
+            val allRecords = mutableListOf<BloodGlucoseRecord>()
+            var pageToken: String? = null
+            
+            do {
+                val request = ReadRecordsRequest(
+                    recordType = BloodGlucoseRecord::class,
+                    timeRangeFilter = TimeRangeFilter.between(startTime, endTime),
+                    dataOriginFilter = dataOriginFilter,
+                    pageToken = pageToken
+                )
+                val response = healthConnectClient.readRecords(request)
+                allRecords.addAll(response.records)
+                pageToken = response.pageToken
+            } while (pageToken != null)
+            
+            allRecords.map { record ->
+                GlucoseData(
+                    level = record.level.inMilligramsPerDeciliter,
+                    unit = "mg/dL",
+                    timestamp = record.time,
+                    mealType = record.mealType?.toString()
+                )
+            }.sortedByDescending { it.timestamp }
+        } catch (e: Exception) {
+            emptyList()
+        }
+        
+        return Triple(stepsData, heartRateData, glucoseData)
     }
     
     // Write Functions
